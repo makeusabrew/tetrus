@@ -57,27 +57,30 @@ const I_PIECES: [[[u8; 4]; 4]; 4] = [
 
 struct Piece {
     pub shapes: Vec<Vec<Vec<u8>>>,
+    pub colour: Color,
     pub angle: usize,
     pub column: usize,
     pub row: usize,
 }
 
-fn map_shapes(piece_type: usize) -> Vec<Vec<Vec<u8>>> {
+fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
     match piece_type {
-        0 => T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        1 => O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        2 => S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        3 => Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        4 => L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        5 => J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        _ => I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        0 => (Color::MAGENTA, T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        1 => (Color::YELLOW, O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        2 => (Color::GREEN, S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        3 => (Color::RED, Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        4 => (Color::GREY, L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        5 => (Color::BLUE, J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        _ => (Color::CYAN, I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
     }
 }
 
 fn get_random_piece() -> Piece {
     let index = rand::random::<usize>() % 7;
+    let (colour, shapes) = map_shapes(index);
     Piece {
-        shapes: map_shapes(index),
+        shapes,
+        colour,
         angle: 0,
         column: 0,
         row: 0,
@@ -86,7 +89,7 @@ fn get_random_piece() -> Piece {
 
 fn main() {
     // 10x20 area
-    let mut blocks = [0u8; BLOCK_COUNT];
+    let mut blocks = [Color::BLACK; BLOCK_COUNT];
 
     let sdl_context = sdl2::init().unwrap();
 
@@ -146,6 +149,14 @@ fn main() {
             }
         }
 
+        /*
+        if piece.column <= 0 {
+            piece.column = 0;
+        } else if piece.column + piece.shapes.len() >= BLOCK_PER_ROW {
+            piece.column = BLOCK_PER_ROW - piece.shapes.len();
+        }
+        */
+
         if tick_time.elapsed().as_secs() >= 1 {
             tick_time = Instant::now();
             piece.row += 1;
@@ -162,7 +173,8 @@ fn main() {
                 }
                 let x = piece.column + col_index;
                 let idx = (x + y) + BLOCK_PER_ROW;
-                if idx >= BLOCK_COUNT || blocks[idx] != 0 {
+
+                if idx >= BLOCK_COUNT || blocks[idx] != Color::BLACK {
                     // write all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
                         let row_offset = (row_index + piece.row) * 10;
@@ -171,7 +183,7 @@ fn main() {
                             if *piece_block == 0 {
                                 continue;
                             }
-                            blocks[row_offset + piece_index + col_offset] = *piece_block * 100;
+                            blocks[row_offset + piece_index + col_offset] = piece.colour;
                         }
                     }
                     piece = get_random_piece();
@@ -188,12 +200,11 @@ fn main() {
 
         // fixed blocks first
         for (i, block) in blocks.iter().enumerate() {
-            let block = *block;
-            let colour = block;
+            let colour = *block;
             let x = PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE);
             let y = PLAYFIELD_START_Y + ((i / 10) * BLOCK_SIZE);
             let rect_w = BLOCK_SIZE as u32;
-            canvas.set_draw_color(Color::RGB(colour, colour, colour));
+            canvas.set_draw_color(colour);
             canvas
                 .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
                 .unwrap();
@@ -210,7 +221,7 @@ fn main() {
                 }
                 let x = PLAYFIELD_START_X + ((piece.column + piece_index) * BLOCK_SIZE);
                 let rect_w = BLOCK_SIZE as u32;
-                canvas.set_draw_color(Color::RGB(colour * 100, colour, colour));
+                canvas.set_draw_color(piece.colour);
                 canvas
                     .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
                     .unwrap();

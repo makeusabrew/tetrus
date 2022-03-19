@@ -17,10 +17,29 @@ const BLOCK_COUNT: usize = 200;
 const PLAYFIELD_START_X: usize = 250;
 const PLAYFIELD_START_Y: usize = 0;
 
-const T_PIECE: [[u8; 3]; 2] = [
+const T_PIECE_N: [[u8; 3]; 3] = [
     [0, 200, 0],
     [200, 200, 200],
+    [0, 0, 0],
 ];
+const T_PIECE_E: [[u8; 3]; 3] = [
+    [0, 200, 0],
+    [0, 200, 200],
+    [0, 200, 0],
+];
+const T_PIECE_S: [[u8; 3]; 3] = [
+    [0, 0, 0],
+    [200, 200, 200],
+    [0, 200, 0],
+];
+const T_PIECE_W: [[u8; 3]; 3] = [
+    [0, 200, 0],
+    [200, 200, 0],
+    [0, 200, 0],
+];
+
+const T_PIECES: [[[u8; 3]; 3]; 4] = [T_PIECE_N, T_PIECE_E, T_PIECE_S, T_PIECE_W];
+
 
 fn main() {
     // 10x20 area
@@ -41,24 +60,12 @@ fn main() {
 
     let mut current_piece_col: usize = 0;
     let mut current_piece_row = 0;
-    let mut current_piece = [[0u8; 3]; 2];
-
-    current_piece = T_PIECE;
+    //§let mut current_piece = [[0u8; 3]; 3];
+    let mut current_piece_index = 0;
 
     let mut tick_time = Instant::now();
 
     'running: loop {
-        // @TODO this should come after processing all input events
-        /*
-        for (row_index, piece_row) in current_piece.iter().enumerate() {
-            let row_offset = (row_index + current_piece_row) * 10;
-            let col_offset = current_piece_col as usize;
-            for (piece_index, _) in piece_row.iter().enumerate() {
-                blocks[row_offset + piece_index + col_offset] = 0;
-            }
-        }
-        */
-
         // @TODO: don't directly mutate x/y here, signal that we want to move
         for event in event_pump.poll_iter() {
             match event {
@@ -75,35 +82,25 @@ fn main() {
                 Event::KeyDown { keycode: Some(Keycode::S), .. } => {
                     current_piece_row += 1;
                 }
+                Event::KeyDown { keycode: Some(Keycode::W), .. } => {
+                    current_piece_index += 1;
+                    if current_piece_index == 4 {
+                        current_piece_index = 0;
+                    }
+                }
                 _ => {}
             }
         }
+
+        let current_piece = T_PIECES[current_piece_index];
 
         if tick_time.elapsed().as_secs() >= 1 {
             tick_time = Instant::now();
             current_piece_row += 1;
         }
 
-        //current_piece_row = current_piece_row.max(19);
-
-        /*
-         * Draw in the current piece into the blocks array
-         */
-        /*
-        for (row_index, piece_row) in current_piece.iter().enumerate() {
-            let row_offset = (row_index + current_piece_row) * 10;
-            let col_offset = current_piece_col as usize;
-            for (piece_index, piece_block) in piece_row.iter().enumerate() {
-                blocks[row_offset + piece_index + col_offset] = *piece_block;
-            }
-        }
-        */
-
-        let mut collision = false;
-        // collision detection
-        for (row_index, piece_row) in current_piece.iter().enumerate() {
+        'collision: for (row_index, piece_row) in current_piece.iter().enumerate() {
             let y = (current_piece_row + row_index) * BLOCK_PER_ROW;
-
             for (col_index, piece_val) in piece_row.iter().enumerate() {
                 let colour = *piece_val;
                 if colour == 0 {
@@ -112,20 +109,22 @@ fn main() {
                 let x = current_piece_col + col_index;
                 let idx = (x + y) + BLOCK_PER_ROW;
                 if idx >= BLOCK_COUNT  || blocks[idx] != 0 {
-                    collision = true;
+                    // write all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_piece.iter().enumerate() {
                         let row_offset = (row_index + current_piece_row) * 10;
                         let col_offset = current_piece_col as usize;
                         for (piece_index, piece_block) in piece_row.iter().enumerate() {
+                            if *piece_block == 0 {
+                                continue;
+                            }
                             blocks[row_offset + piece_index + col_offset] = *piece_block;
                         }
                     }
+                    current_piece_row = 0;
+                    current_piece_col = 0;
+                    break 'collision;
                 }
             }
-        }
-        if collision {
-            current_piece_row = 0;
-            current_piece_col = 0;
         }
 
         /*

@@ -57,8 +57,7 @@ const I_PIECES: [[[u8; 4]; 4]; 4] = [
 const COLOR_ORANGE: Color = Color::RGBA(255, 165, 0, 255);
 
 struct Piece {
-    pub shapes: Vec<Vec<Vec<u8>>>,
-    pub colour: Color,
+    pub shapes: ShapeSet,
     pub angle: usize,
     pub column: i32,
     pub row: usize,
@@ -77,49 +76,63 @@ struct Score {
     pub lines: u32,
 }
 
-fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
-    match piece_type {
-        0 => (
-            Color::MAGENTA,
-            T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        1 => (
-            Color::YELLOW,
-            O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        2 => (
-            Color::GREEN,
-            S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        3 => (
-            Color::RED,
-            Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        4 => (
-            COLOR_ORANGE,
-            L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        5 => (
-            Color::BLUE,
-            J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
-        _ => (
-            Color::CYAN,
-            I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-        ),
+struct ShapeSet(Color, Vec<Vec<Vec<u8>>>);
+
+impl ShapeSet {
+    pub fn from_index(piece_type: usize) -> ShapeSet {
+        match piece_type {
+            0 => ShapeSet(
+                Color::MAGENTA,
+                T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            1 => ShapeSet(
+                Color::YELLOW,
+                O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            2 => ShapeSet(
+                Color::GREEN,
+                S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            3 => ShapeSet(
+                Color::RED,
+                Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            4 => ShapeSet(
+                COLOR_ORANGE,
+                L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            5 => ShapeSet(
+                Color::BLUE,
+                J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+            _ => ShapeSet(
+                Color::CYAN,
+                I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+            ),
+        }
+    }
+    pub fn get(&self, angle: usize) -> Vec<Vec<u8>> {
+        self.1[angle].clone()
+    }
+    pub fn len(&self) -> usize {
+        self.1.len()
+    }
+    pub fn colour(&self) -> Color {
+        self.0
     }
 }
 
-fn get_random_piece() -> Piece {
-    let index = rand::random::<usize>() % 7;
-    let (colour, shapes) = map_shapes(index);
-    Piece {
-        shapes,
-        colour,
-        angle: 0,
-        column: 4,
-        row: 0,
-        tick_time: Instant::now(),
+impl Piece {
+    pub fn random() -> Piece {
+        let index = rand::random::<usize>() % 7;
+        let shapes = ShapeSet::from_index(index);
+        Piece {
+            shapes,
+            angle: 0,
+            column: 4,
+            row: 0,
+            tick_time: Instant::now(),
+        }
     }
 }
 
@@ -140,7 +153,7 @@ fn main() {
     let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let mut piece = get_random_piece();
+    let mut piece = Piece::random();
     let mut score = Score {
         points: 0,
         lines: 0,
@@ -226,7 +239,7 @@ fn main() {
             piece.column += 1;
         }
 
-        let current_shape = piece.shapes[piece.angle as usize].clone();
+        let current_shape = piece.shapes.get(piece.angle);
 
         /*
          * Collision detection
@@ -251,7 +264,7 @@ fn main() {
                             if *block == 0 || x < 0 {
                                 continue;
                             }
-                            blocks[x as usize + y] = piece.colour;
+                            blocks[x as usize + y] = piece.shapes.colour();
                         }
                     }
 
@@ -284,7 +297,7 @@ fn main() {
                     score.points += (num_lines * num_lines) * 100;
 
                     // as soon as we hit anything, spawn a new piece and don't look for any further collisions
-                    piece = get_random_piece();
+                    piece = Piece::random();
                     break 'collision;
                 }
             }
@@ -320,7 +333,7 @@ fn main() {
                 let x = PLAYFIELD_START_X as i32
                     + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
                 let rect_w = BLOCK_SIZE as u32;
-                canvas.set_draw_color(piece.colour);
+                canvas.set_draw_color(piece.shapes.colour());
                 canvas
                     .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
                     .unwrap();

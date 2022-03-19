@@ -9,13 +9,13 @@ use sdl2::rect::Rect;
 
 const SCREEN_WIDTH: u32 = 800;
 const SCREEN_HEIGHT: u32 = 600;
-
 const BLOCK_SIZE: usize = 30;
-const BLOCKS_PER_ROW: usize = 10;
-const BLOCK_COUNT: usize = 200;
-
 const PLAYFIELD_START_X: usize = 250;
 const PLAYFIELD_START_Y: usize = 0;
+
+const COLUMN_COUNT: usize = 10;
+const ROW_COUNT: usize = 20;
+const BLOCK_COUNT: usize = COLUMN_COUNT * ROW_COUNT;
 
 const T_PIECES: [[[u8; 3]; 3]; 4] = [
     [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
@@ -143,7 +143,7 @@ fn main() {
     let mut piece = get_random_piece();
     let mut score = Score {
         points: 0,
-        lines: 0
+        lines: 0,
     };
 
     'running: loop {
@@ -154,7 +154,7 @@ fn main() {
             left: false,
             right: false,
             up: false,
-            down: false
+            down: false,
         };
         for event in event_pump.poll_iter() {
             // @TODO: don't directly mutate x/y here, signal that we want to move instead
@@ -219,20 +219,20 @@ fn main() {
          * Collision detection
          */
         'collision: for (row_index, piece_row) in current_shape.iter().enumerate() {
-            let y = (piece.row + row_index) * BLOCKS_PER_ROW;
+            let y = (piece.row + row_index) * COLUMN_COUNT;
             for (col_index, block) in piece_row.iter().enumerate() {
                 let x = piece.column + col_index as i32;
                 if *block == 0 || x < 0 {
                     continue;
                 }
 
-                let row_below = (x as usize + y) + BLOCKS_PER_ROW;
+                let row_below = (x as usize + y) + COLUMN_COUNT;
 
                 // we're either on the last row or there's something underneath us - stop here
                 if row_below >= BLOCK_COUNT || blocks[row_below] != Color::BLACK {
                     // copy all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
-                        let y = (piece.row + row_index) * BLOCKS_PER_ROW;
+                        let y = (piece.row + row_index) * COLUMN_COUNT;
                         for (piece_index, block) in piece_row.iter().enumerate() {
                             let x = piece.column + piece_index as i32;
                             if *block == 0 || x < 0 {
@@ -245,12 +245,12 @@ fn main() {
                     let mut lines = vec![];
 
                     // get a count of how many lines we've cleared plus their indices
-                    for row in 0..20 {
-                        for col in 0..BLOCKS_PER_ROW {
-                            if blocks[(row * BLOCKS_PER_ROW) + col] == Color::BLACK {
+                    for row in 0..ROW_COUNT {
+                        for col in 0..COLUMN_COUNT {
+                            if blocks[(row * COLUMN_COUNT) + col] == Color::BLACK {
                                 break;
                             }
-                            if col == BLOCKS_PER_ROW - 1 {
+                            if col == COLUMN_COUNT - 1 {
                                 lines.push(row);
                             }
                         }
@@ -259,9 +259,9 @@ fn main() {
                     // shift all rows above each line down by one
                     for line in &lines {
                         for row in (1..=*line).rev() {
-                            for col in 0..BLOCKS_PER_ROW {
-                                blocks[(row * BLOCKS_PER_ROW) + col] =
-                                    blocks[((row - 1) * BLOCKS_PER_ROW) + col];
+                            for col in 0..COLUMN_COUNT {
+                                blocks[(row * COLUMN_COUNT) + col] =
+                                    blocks[((row - 1) * COLUMN_COUNT) + col];
                             }
                         }
                     }

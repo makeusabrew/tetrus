@@ -146,6 +146,19 @@ fn main() {
         lines: 0,
     };
 
+    /*
+     * @TODO:
+     * 
+     * - collision detection with play field edges
+     * - collision detection with other block edges
+     * - don't detect collisions _below_ until we're about to tick again
+     * - score display
+     * - some shadowing on blocks to make them easier to distinguish
+     * - space bar support
+     * - input handling should detect press/release instead of just down events
+     * - sound
+     */
+
     'running: loop {
         /*
          * Input handling

@@ -54,6 +54,7 @@ const I_PIECES: [[[u8; 4]; 4]; 4] = [
     [[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0]],
     [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]],
 ];
+const COLOR_ORANGE: Color = Color::RGBA(255, 165, 0, 255);
 
 struct Piece {
     pub shapes: Vec<Vec<Vec<u8>>>,
@@ -69,7 +70,7 @@ fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
         1 => (Color::YELLOW, O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
         2 => (Color::GREEN, S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
         3 => (Color::RED, Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        4 => (Color::GREY, L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        4 => (COLOR_ORANGE, L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
         5 => (Color::BLUE, J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
         _ => (Color::CYAN, I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
     }
@@ -149,17 +150,20 @@ fn main() {
             }
         }
 
-        /*
-        if piece.column <= 0 {
-            piece.column = 0;
-        } else if piece.column + piece.shapes.len() >= BLOCK_PER_ROW {
-            piece.column = BLOCK_PER_ROW - piece.shapes.len();
-        }
-        */
 
         if tick_time.elapsed().as_secs() >= 1 {
             tick_time = Instant::now();
             piece.row += 1;
+        }
+        /*
+        if piece.column <= 0 {
+            piece.column = 0;
+        } else if piece.column + piece.shapes.len() >= BLOCK_PER_ROW {
+            //piece.column = BLOCK_PER_ROW - piece.shapes.len();
+        }
+        */
+        if piece.row >= 20 {
+            piece.row = 19;
         }
 
         let current_shape = piece.shapes[piece.angle as usize].clone();
@@ -175,17 +179,42 @@ fn main() {
                 let idx = (x + y) + BLOCK_PER_ROW;
 
                 if idx >= BLOCK_COUNT || blocks[idx] != Color::BLACK {
+
                     // write all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
                         let row_offset = (row_index + piece.row) * 10;
                         let col_offset = piece.column as usize;
-                        for (piece_index, piece_block) in piece_row.iter().enumerate() {
-                            if *piece_block == 0 {
+                        for (piece_index, block) in piece_row.iter().enumerate() {
+                            if *block == 0 {
                                 continue;
                             }
                             blocks[row_offset + piece_index + col_offset] = piece.colour;
                         }
                     }
+
+                    let mut lines = vec![];
+                    for row in 0..20 {
+                        for col in 0..BLOCK_PER_ROW {
+                            if blocks[(row * BLOCK_PER_ROW) + col] == Color::BLACK {
+                                break;
+                            }
+                            if col == BLOCK_PER_ROW-1 {
+                                lines.push(row);
+                            }
+                        }
+                    }
+                    if lines.len() > 0 {
+                        println!("Lines! {:#?}", lines);
+                    }
+                    for line in lines {
+                        for row in (1..=line).rev() {
+                            for col in 0..BLOCK_PER_ROW {
+                                blocks[(row * BLOCK_PER_ROW) + col] = blocks[((row-1) * BLOCK_PER_ROW) + col];
+                            }
+                        }
+                    }
+
+                    // time for a new piece
                     piece = get_random_piece();
                     break 'collision;
                 }

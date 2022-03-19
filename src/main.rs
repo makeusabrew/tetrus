@@ -11,7 +11,7 @@ const SCREEN_WIDTH: u32 = 800;
 const SCREEN_HEIGHT: u32 = 600;
 
 const BLOCK_SIZE: usize = 30;
-const BLOCK_PER_ROW: usize = 10;
+const BLOCKS_PER_ROW: usize = 10;
 const BLOCK_COUNT: usize = 200;
 
 const PLAYFIELD_START_X: usize = 250;
@@ -62,6 +62,7 @@ struct Piece {
     pub angle: usize,
     pub column: i32,
     pub row: usize,
+    pub tick_time: Instant,
 }
 
 fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
@@ -104,8 +105,9 @@ fn get_random_piece() -> Piece {
         shapes,
         colour,
         angle: 0,
-        column: 0,
+        column: 4,
         row: 0,
+        tick_time: Instant::now(),
     }
 }
 
@@ -124,16 +126,16 @@ fn main() {
         .unwrap();
 
     let mut canvas = window.into_canvas().build().unwrap();
-
     let mut event_pump = sdl_context.event_pump().unwrap();
-
-    let mut tick_time = Instant::now();
 
     let mut piece = get_random_piece();
 
     'running: loop {
-        // @TODO: don't directly mutate x/y here, signal that we want to move
+        /*
+         * Input handling
+         */
         for event in event_pump.poll_iter() {
+            // @TODO: don't directly mutate x/y here, signal that we want to move instead
             match event {
                 Event::Quit { .. }
                 | Event::KeyDown {
@@ -171,73 +173,65 @@ fn main() {
             }
         }
 
-        if tick_time.elapsed().as_secs() >= 1 {
-            tick_time = Instant::now();
+        if piece.tick_time.elapsed().as_secs() >= 1 {
+            piece.tick_time = Instant::now();
             piece.row += 1;
-        }
-        /*
-        if piece.column <= 0 {
-            piece.column = 0;
-        } else if piece.column + piece.shapes.len() >= BLOCK_PER_ROW {
-            //piece.column = BLOCK_PER_ROW - piece.shapes.len();
-        }
-        */
-        if piece.row >= 20 {
-            piece.row = 19;
         }
 
         let current_shape = piece.shapes[piece.angle as usize].clone();
 
+        /*
+         * Collision detection
+         */
         'collision: for (row_index, piece_row) in current_shape.iter().enumerate() {
-            let y = (piece.row + row_index) * BLOCK_PER_ROW;
-            for (col_index, piece_val) in piece_row.iter().enumerate() {
-                let colour = *piece_val;
-                if colour == 0 {
-                    continue;
-                }
+            let y = (piece.row + row_index) * BLOCKS_PER_ROW;
+            for (col_index, block) in piece_row.iter().enumerate() {
                 let x = piece.column + col_index as i32;
-                if x < 0 {
+                if *block == 0 || x < 0 {
                     continue;
                 }
-                let idx = (x as usize + y) + BLOCK_PER_ROW;
 
-                if idx >= BLOCK_COUNT || blocks[idx] != Color::BLACK {
-                    // write all the piece blocks into the background blocks array
+                let row_below = (x as usize + y) + BLOCKS_PER_ROW;
+
+                // we're either on the last row or there's something underneath us - stop here
+                if row_below >= BLOCK_COUNT || blocks[row_below] != Color::BLACK {
+                    // copy all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
-                        let row_offset = (row_index + piece.row) * 10;
+                        let y = (piece.row + row_index) * BLOCKS_PER_ROW;
                         for (piece_index, block) in piece_row.iter().enumerate() {
-                            if *block == 0 {
-                                continue;
-                            }
                             let x = piece.column + piece_index as i32;
-                            if x < 0 {
+                            if *block == 0 || x < 0 {
                                 continue;
                             }
-                            blocks[row_offset + x as usize] = piece.colour;
+                            blocks[x as usize + y] = piece.colour;
                         }
                     }
 
                     let mut lines = vec![];
+
+                    // get a count of how many lines we've cleared plus their indices
                     for row in 0..20 {
-                        for col in 0..BLOCK_PER_ROW {
-                            if blocks[(row * BLOCK_PER_ROW) + col] == Color::BLACK {
+                        for col in 0..BLOCKS_PER_ROW {
+                            if blocks[(row * BLOCKS_PER_ROW) + col] == Color::BLACK {
                                 break;
                             }
-                            if col == BLOCK_PER_ROW - 1 {
+                            if col == BLOCKS_PER_ROW - 1 {
                                 lines.push(row);
                             }
                         }
                     }
+
+                    // shift all rows above each line down by one
                     for line in lines {
                         for row in (1..=line).rev() {
-                            for col in 0..BLOCK_PER_ROW {
-                                blocks[(row * BLOCK_PER_ROW) + col] =
-                                    blocks[((row - 1) * BLOCK_PER_ROW) + col];
+                            for col in 0..BLOCKS_PER_ROW {
+                                blocks[(row * BLOCKS_PER_ROW) + col] =
+                                    blocks[((row - 1) * BLOCKS_PER_ROW) + col];
                             }
                         }
                     }
 
-                    // time for a new piece
+                    // as soon as we hit anything, spawn a new piece and don't look for any further collisions
                     piece = get_random_piece();
                     break 'collision;
                 }
@@ -245,12 +239,12 @@ fn main() {
         }
 
         /*
-         * Render
+         * Rendering
          */
         canvas.set_draw_color(Color::RGB(100, 100, 100));
         canvas.clear();
 
-        // fixed blocks first
+        // existing blocks first
         for (i, block) in blocks.iter().enumerate() {
             let colour = *block;
             let x = PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE);

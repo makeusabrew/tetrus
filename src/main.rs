@@ -60,19 +60,40 @@ struct Piece {
     pub shapes: Vec<Vec<Vec<u8>>>,
     pub colour: Color,
     pub angle: usize,
-    pub column: usize,
+    pub column: i32,
     pub row: usize,
 }
 
 fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
     match piece_type {
-        0 => (Color::MAGENTA, T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        1 => (Color::YELLOW, O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        2 => (Color::GREEN, S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        3 => (Color::RED, Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        4 => (COLOR_ORANGE, L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        5 => (Color::BLUE, J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
-        _ => (Color::CYAN, I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()),
+        0 => (
+            Color::MAGENTA,
+            T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        1 => (
+            Color::YELLOW,
+            O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        2 => (
+            Color::GREEN,
+            S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        3 => (
+            Color::RED,
+            Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        4 => (
+            COLOR_ORANGE,
+            L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        5 => (
+            Color::BLUE,
+            J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
+        _ => (
+            Color::CYAN,
+            I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
+        ),
     }
 }
 
@@ -150,7 +171,6 @@ fn main() {
             }
         }
 
-
         if tick_time.elapsed().as_secs() >= 1 {
             tick_time = Instant::now();
             piece.row += 1;
@@ -175,20 +195,25 @@ fn main() {
                 if colour == 0 {
                     continue;
                 }
-                let x = piece.column + col_index;
-                let idx = (x + y) + BLOCK_PER_ROW;
+                let x = piece.column + col_index as i32;
+                if x < 0 {
+                    continue;
+                }
+                let idx = (x as usize + y) + BLOCK_PER_ROW;
 
                 if idx >= BLOCK_COUNT || blocks[idx] != Color::BLACK {
-
                     // write all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
                         let row_offset = (row_index + piece.row) * 10;
-                        let col_offset = piece.column as usize;
                         for (piece_index, block) in piece_row.iter().enumerate() {
                             if *block == 0 {
                                 continue;
                             }
-                            blocks[row_offset + piece_index + col_offset] = piece.colour;
+                            let x = piece.column + piece_index as i32;
+                            if x < 0 {
+                                continue;
+                            }
+                            blocks[row_offset + x as usize] = piece.colour;
                         }
                     }
 
@@ -198,18 +223,16 @@ fn main() {
                             if blocks[(row * BLOCK_PER_ROW) + col] == Color::BLACK {
                                 break;
                             }
-                            if col == BLOCK_PER_ROW-1 {
+                            if col == BLOCK_PER_ROW - 1 {
                                 lines.push(row);
                             }
                         }
                     }
-                    if lines.len() > 0 {
-                        println!("Lines! {:#?}", lines);
-                    }
                     for line in lines {
                         for row in (1..=line).rev() {
                             for col in 0..BLOCK_PER_ROW {
-                                blocks[(row * BLOCK_PER_ROW) + col] = blocks[((row-1) * BLOCK_PER_ROW) + col];
+                                blocks[(row * BLOCK_PER_ROW) + col] =
+                                    blocks[((row - 1) * BLOCK_PER_ROW) + col];
                             }
                         }
                     }
@@ -248,7 +271,8 @@ fn main() {
                 if colour == 0 {
                     continue;
                 }
-                let x = PLAYFIELD_START_X + ((piece.column + piece_index) * BLOCK_SIZE);
+                let x = PLAYFIELD_START_X as i32
+                    + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
                 let rect_w = BLOCK_SIZE as u32;
                 canvas.set_draw_color(piece.colour);
                 canvas

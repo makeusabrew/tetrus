@@ -65,6 +65,18 @@ struct Piece {
     pub tick_time: Instant,
 }
 
+struct Input {
+    pub left: bool,
+    pub right: bool,
+    pub up: bool,
+    pub down: bool,
+}
+
+struct Score {
+    pub points: u32,
+    pub lines: u32,
+}
+
 fn map_shapes(piece_type: usize) -> (Color, Vec<Vec<Vec<u8>>>) {
     match piece_type {
         0 => (
@@ -129,11 +141,21 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let mut piece = get_random_piece();
+    let mut score = Score {
+        points: 0,
+        lines: 0
+    };
 
     'running: loop {
         /*
          * Input handling
          */
+        let mut input = Input {
+            left: false,
+            right: false,
+            up: false,
+            down: false
+        };
         for event in event_pump.poll_iter() {
             // @TODO: don't directly mutate x/y here, signal that we want to move instead
             match event {
@@ -143,31 +165,28 @@ fn main() {
                     ..
                 } => break 'running,
                 Event::KeyDown {
-                    keycode: Some(Keycode::A),
+                    keycode: Some(Keycode::Left),
                     ..
                 } => {
-                    piece.column -= 1;
+                    input.left = true;
                 }
                 Event::KeyDown {
-                    keycode: Some(Keycode::D),
+                    keycode: Some(Keycode::Right),
                     ..
                 } => {
-                    piece.column += 1;
+                    input.right = true;
                 }
                 Event::KeyDown {
-                    keycode: Some(Keycode::S),
+                    keycode: Some(Keycode::Down),
                     ..
                 } => {
-                    piece.row += 1;
+                    input.down = true;
                 }
                 Event::KeyDown {
-                    keycode: Some(Keycode::W),
+                    keycode: Some(Keycode::Up),
                     ..
                 } => {
-                    piece.angle += 1;
-                    if piece.angle == piece.shapes.len() {
-                        piece.angle = 0;
-                    }
+                    input.up = true;
                 }
                 _ => {}
             }
@@ -175,7 +194,23 @@ fn main() {
 
         if piece.tick_time.elapsed().as_secs() >= 1 {
             piece.tick_time = Instant::now();
+            if !input.down {
+                piece.row += 1;
+            }
+        }
+        if input.up {
+            piece.angle += 1;
+            if piece.angle == piece.shapes.len() {
+                piece.angle = 0;
+            }
+        }
+        if input.down {
             piece.row += 1;
+        }
+        if input.left {
+            piece.column -= 1;
+        } else if input.right {
+            piece.column += 1;
         }
 
         let current_shape = piece.shapes[piece.angle as usize].clone();
@@ -222,14 +257,18 @@ fn main() {
                     }
 
                     // shift all rows above each line down by one
-                    for line in lines {
-                        for row in (1..=line).rev() {
+                    for line in &lines {
+                        for row in (1..=*line).rev() {
                             for col in 0..BLOCKS_PER_ROW {
                                 blocks[(row * BLOCKS_PER_ROW) + col] =
                                     blocks[((row - 1) * BLOCKS_PER_ROW) + col];
                             }
                         }
                     }
+
+                    let num_lines = lines.len() as u32;
+                    score.lines += num_lines;
+                    score.points += (num_lines * num_lines) * 100;
 
                     // as soon as we hit anything, spawn a new piece and don't look for any further collisions
                     piece = get_random_piece();

@@ -161,7 +161,7 @@ fn main() {
 
     /*
      * @TODO:
-     * 
+     *
      * - collision detection with play field edges
      * - collision detection with other block edges
      * - don't detect collisions _below_ until we're about to tick again
@@ -252,13 +252,14 @@ fn main() {
                     continue;
                 }
 
-                let row_below = (x as usize + y) + COLUMN_COUNT;
+                let current_index = x as usize + y;
 
-                // we're either on the last row or there's something underneath us - stop here
-                if row_below >= BLOCK_COUNT || blocks[row_below] != Color::BLACK {
+                if current_index >= BLOCK_COUNT || blocks[current_index] != Color::BLACK {
                     // copy all the piece blocks into the background blocks array
                     for (row_index, piece_row) in current_shape.iter().enumerate() {
-                        let y = (piece.row + row_index) * COLUMN_COUNT;
+                        // the -1 here is very important. As soon as anything goes off screen or collides with something below it
+                        // we need to snap it back up a row into place
+                        let y = (piece.row + row_index - 1) * COLUMN_COUNT;
                         for (piece_index, block) in piece_row.iter().enumerate() {
                             let x = piece.column + piece_index as i32;
                             if *block == 0 || x < 0 {
@@ -315,9 +316,24 @@ fn main() {
             let x = PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE);
             let y = PLAYFIELD_START_Y + ((i / 10) * BLOCK_SIZE);
             let rect_w = BLOCK_SIZE as u32;
-            canvas.set_draw_color(colour);
+
+            canvas.set_draw_color(Color::GREY);
             canvas
                 .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
+                .unwrap();
+            let (start_offset, end_offset) = if colour.rgb() != (0, 0, 0) {
+                (1, 2)
+            } else {
+                (0, 0)
+            };
+            canvas.set_draw_color(colour);
+            canvas
+                .fill_rect(Rect::new(
+                    x as i32 + start_offset,
+                    y as i32 + start_offset,
+                    rect_w - end_offset,
+                    rect_w - end_offset,
+                ))
                 .unwrap();
         }
 
@@ -333,9 +349,19 @@ fn main() {
                 let x = PLAYFIELD_START_X as i32
                     + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
                 let rect_w = BLOCK_SIZE as u32;
-                canvas.set_draw_color(piece.shapes.colour());
+                canvas.set_draw_color(Color::GREY);
                 canvas
                     .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
+                    .unwrap();
+
+                canvas.set_draw_color(piece.shapes.colour());
+                canvas
+                    .fill_rect(Rect::new(
+                        x as i32 + 1,
+                        y as i32 + 1,
+                        rect_w - 2,
+                        rect_w - 2,
+                    ))
                     .unwrap();
             }
         }

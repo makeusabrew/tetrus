@@ -134,6 +134,41 @@ impl Piece {
             tick_time: Instant::now(),
         }
     }
+
+    pub fn current_shape(&self) -> Vec<Vec<u8>> {
+        self.shapes.get(self.angle)
+    }
+
+    // (top, left, bottom, right)
+    // @TODO: no need to calculate this all the time of course. Only when we change angle
+    /*
+    pub fn offsets(&self) -> (i32, i32, i32, i32) {
+        let mut r = (100, 100, -100, -100);
+        for (row_index, piece_row) in self.shapes.get(self.angle).iter().enumerate() {
+            let row_index = row_index as i32;
+            for (col_index, block) in piece_row.iter().enumerate() {
+                let col_index = col_index as i32;
+                if *block == 0 {
+                    continue;
+                }
+                if row_index < r.0 {
+                    r.0 = row_index;
+                }
+                if col_index < r.1 {
+                    r.1 = col_index;
+                }
+                if row_index > r.2 {
+                    r.2 = row_index;
+                }
+                if col_index > r.3 {
+                    r.3 = col_index;
+                }
+            }
+        }
+        r
+
+    }
+    */
 }
 
 fn main() {
@@ -162,9 +197,7 @@ fn main() {
     /*
      * @TODO:
      *
-     * - collision detection with play field edges
-     * - collision detection with other block edges
-     * - don't detect collisions _below_ until we're about to tick again
+     * - fix overflows when rotating up against playfield edges - need to nudge piece back into play
      * - score display
      * - some shadowing on blocks to make them easier to distinguish
      * - space bar support
@@ -233,30 +266,68 @@ fn main() {
         if input.down {
             piece.row += 1;
         }
+
+        /*
+         * Horizontal collision detection
+         *
+         * This can unset any left/right movement intended by the player
+         */
+        for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+            let y = (piece.row + row_index) * COLUMN_COUNT;
+            for (col_index, block) in piece_row.iter().enumerate() {
+                if *block == 0 {
+                    continue;
+                }
+
+                let x = piece.column + col_index as i32;
+
+                // play field left/right
+                if x <= 0 {
+                    input.left = false;
+                } else if x >= COLUMN_COUNT as i32 - 1 {
+                    input.right = false;
+                } else {
+                    // aneighbouring blocks
+                    // bit of a bodge - only here because at position (x: 0, y: 0) this left_neighbour assignment would otherwise underflow
+                    let left_neighbour = x as usize + y - 1;
+                    let right_neighbour = x as usize + y + 1;
+                    if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != Color::BLACK {
+                        input.left = false;
+                    }
+                    if right_neighbour >= BLOCK_COUNT || blocks[right_neighbour] != Color::BLACK {
+                        input.right = false;
+                    }
+                }
+            }
+        }
+
         if input.left {
             piece.column -= 1;
         } else if input.right {
             piece.column += 1;
         }
 
-        let current_shape = piece.shapes.get(piece.angle);
-
         /*
-         * Collision detection
+         * Vertical collision detection
          */
-        'collision: for (row_index, piece_row) in current_shape.iter().enumerate() {
+        'collision_vertical: for (row_index, piece_row) in piece.current_shape().iter().enumerate()
+        {
             let y = (piece.row + row_index) * COLUMN_COUNT;
             for (col_index, block) in piece_row.iter().enumerate() {
-                let x = piece.column + col_index as i32;
-                if *block == 0 || x < 0 {
+                if *block == 0 {
                     continue;
                 }
+                let x = piece.column + col_index as i32;
 
-                let current_index = x as usize + y;
-
-                if current_index >= BLOCK_COUNT || blocks[current_index] != Color::BLACK {
+                /*
+                 * check for things below this shape. We cheat here and wait until we're *actually* in the block below
+                 * to allow the player to slide the block around for the duration of a single 'tick' even while it's
+                 * touching something below it
+                 */
+                let current_row_index = x as usize + y;
+                if current_row_index >= BLOCK_COUNT || blocks[current_row_index] != Color::BLACK {
                     // copy all the piece blocks into the background blocks array
-                    for (row_index, piece_row) in current_shape.iter().enumerate() {
+                    for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
                         // the -1 here is very important. As soon as anything goes off screen or collides with something below it
                         // we need to snap it back up a row into place
                         let y = (piece.row + row_index - 1) * COLUMN_COUNT;
@@ -299,7 +370,7 @@ fn main() {
 
                     // as soon as we hit anything, spawn a new piece and don't look for any further collisions
                     piece = Piece::random();
-                    break 'collision;
+                    break 'collision_vertical;
                 }
             }
         }
@@ -321,7 +392,7 @@ fn main() {
             canvas
                 .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
                 .unwrap();
-            let (start_offset, end_offset) = if colour.rgb() != (0, 0, 0) {
+            let (start_offset, end_offset) = if colour != Color::BLACK {
                 (1, 2)
             } else {
                 (0, 0)
@@ -338,7 +409,7 @@ fn main() {
         }
 
         // current piece
-        for (row_index, piece_row) in current_shape.iter().enumerate() {
+        for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
             let y = PLAYFIELD_START_Y + ((piece.row + row_index) * BLOCK_SIZE);
 
             for (piece_index, piece_val) in piece_row.iter().enumerate() {

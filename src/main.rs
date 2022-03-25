@@ -1,18 +1,21 @@
 extern crate sdl2;
 
+use std::thread;
+use std::time::Duration;
 use std::time::Instant;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
 use sdl2::pixels::Color;
 use sdl2::rect::Rect;
+use sdl2::render::Canvas;
+use sdl2::video::Window;
 
 const SCREEN_WIDTH: u32 = 800;
 const SCREEN_HEIGHT: u32 = 600;
 const BLOCK_SIZE: usize = 30;
 const PLAYFIELD_START_X: usize = 250;
 const PLAYFIELD_START_Y: usize = 0;
-
 const COLUMN_COUNT: usize = 10;
 const ROW_COUNT: usize = 20;
 const BLOCK_COUNT: usize = COLUMN_COUNT * ROW_COUNT;
@@ -61,7 +64,6 @@ struct Piece {
     pub angle: usize,
     pub column: i32,
     pub row: usize,
-    pub tick_time: Instant,
 }
 
 struct Input {
@@ -71,44 +73,30 @@ struct Input {
     pub down: bool,
 }
 
+#[derive(Debug)]
 struct Score {
     pub points: u32,
     pub lines: u32,
 }
 
-struct ShapeSet(Color, Vec<Vec<Vec<u8>>>);
+macro_rules! shape_vec {
+    ($a:expr) => {
+        $a.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()
+    };
+}
+
+struct ShapeSet(Color, Vec<Vec<Vec<u8>>>, [u8; 2]);
 
 impl ShapeSet {
     pub fn from_index(piece_type: usize) -> ShapeSet {
         match piece_type {
-            0 => ShapeSet(
-                Color::MAGENTA,
-                T_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            1 => ShapeSet(
-                Color::YELLOW,
-                O_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            2 => ShapeSet(
-                Color::GREEN,
-                S_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            3 => ShapeSet(
-                Color::RED,
-                Z_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            4 => ShapeSet(
-                COLOR_ORANGE,
-                L_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            5 => ShapeSet(
-                Color::BLUE,
-                J_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
-            _ => ShapeSet(
-                Color::CYAN,
-                I_PIECES.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec(),
-            ),
+            0 => ShapeSet(Color::MAGENTA, shape_vec!(T_PIECES), [3, 2]),
+            1 => ShapeSet(Color::YELLOW, shape_vec!(O_PIECES), [2, 2]),
+            2 => ShapeSet(Color::GREEN, shape_vec!(S_PIECES), [3, 2]),
+            3 => ShapeSet(Color::RED, shape_vec!(Z_PIECES), [3, 2]),
+            4 => ShapeSet(COLOR_ORANGE, shape_vec!(L_PIECES), [3, 2]),
+            5 => ShapeSet(Color::BLUE, shape_vec!(J_PIECES), [3, 2]),
+            _ => ShapeSet(Color::CYAN, shape_vec!(I_PIECES), [4, 1]),
         }
     }
     pub fn get(&self, angle: usize) -> Vec<Vec<u8>> {
@@ -119,6 +107,9 @@ impl ShapeSet {
     }
     pub fn colour(&self) -> Color {
         self.0
+    }
+    pub fn width(&self, angle: usize) -> u8 {
+        self.2[angle % 2]
     }
 }
 
@@ -131,7 +122,6 @@ impl Piece {
             angle: 0,
             column: 4,
             row: 0,
-            tick_time: Instant::now(),
         }
     }
 
@@ -139,36 +129,38 @@ impl Piece {
         self.shapes.get(self.angle)
     }
 
-    // (top, left, bottom, right)
-    // @TODO: no need to calculate this all the time of course. Only when we change angle
-    /*
-    pub fn offsets(&self) -> (i32, i32, i32, i32) {
-        let mut r = (100, 100, -100, -100);
-        for (row_index, piece_row) in self.shapes.get(self.angle).iter().enumerate() {
-            let row_index = row_index as i32;
-            for (col_index, block) in piece_row.iter().enumerate() {
-                let col_index = col_index as i32;
-                if *block == 0 {
-                    continue;
-                }
-                if row_index < r.0 {
-                    r.0 = row_index;
-                }
-                if col_index < r.1 {
-                    r.1 = col_index;
-                }
-                if row_index > r.2 {
-                    r.2 = row_index;
-                }
-                if col_index > r.3 {
-                    r.3 = col_index;
-                }
-            }
-        }
-        r
-
+    pub fn width(&self) -> u8 {
+        self.shapes.width(self.angle)
     }
-    */
+
+    pub fn rotate(&mut self) {
+        self.angle += 1;
+        if self.angle == self.shapes.len() {
+            self.angle = 0;
+        }
+    }
+}
+
+fn render_piece(canvas: &mut Canvas<Window>, piece: &Piece, sx: usize, sy: usize) {
+    for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+        let y = (sy + ((piece.row + row_index) * BLOCK_SIZE)) as i32;
+
+        for (piece_index, piece_val) in piece_row.iter().enumerate() {
+            let colour = *piece_val;
+            if colour == 0 {
+                continue;
+            }
+            let x = sx as i32 + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
+            let size = BLOCK_SIZE as u32;
+            canvas.set_draw_color(Color::GREY);
+            canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
+
+            canvas.set_draw_color(piece.shapes.colour());
+            canvas
+                .fill_rect(Rect::new(x + 1, y + 1, size - 2, size - 2))
+                .unwrap();
+        }
+    }
 }
 
 fn main() {
@@ -189,6 +181,7 @@ fn main() {
     let mut event_pump = sdl_context.event_pump().unwrap();
 
     let mut piece = Piece::random();
+    let mut next_piece = Piece::random();
     let mut score = Score {
         points: 0,
         lines: 0,
@@ -197,74 +190,60 @@ fn main() {
     /*
      * @TODO:
      *
-     * - fix overflows when rotating up against playfield edges - need to nudge piece back into play
      * - score display
-     * - some shadowing on blocks to make them easier to distinguish
      * - space bar support
-     * - input handling should detect press/release instead of just down events
      * - sound
      */
 
+    let mut last_rotation = Instant::now();
+    let mut tick_time = Instant::now();
     'running: loop {
+        let frame_start = Instant::now();
         /*
          * Input handling
          */
-        let mut input = Input {
-            left: false,
-            right: false,
-            up: false,
-            down: false,
-        };
         for event in event_pump.poll_iter() {
-            // @TODO: don't directly mutate x/y here, signal that we want to move instead
             match event {
                 Event::Quit { .. }
                 | Event::KeyDown {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => break 'running,
-                Event::KeyDown {
-                    keycode: Some(Keycode::Left),
-                    ..
-                } => {
-                    input.left = true;
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Right),
-                    ..
-                } => {
-                    input.right = true;
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Down),
-                    ..
-                } => {
-                    input.down = true;
-                }
-                Event::KeyDown {
-                    keycode: Some(Keycode::Up),
-                    ..
-                } => {
-                    input.up = true;
-                }
                 _ => {}
             }
         }
 
-        if piece.tick_time.elapsed().as_secs() >= 1 {
-            piece.tick_time = Instant::now();
-            if !input.down {
-                piece.row += 1;
-            }
-        }
-        if input.up {
-            piece.angle += 1;
-            if piece.angle == piece.shapes.len() {
-                piece.angle = 0;
-            }
-        }
-        if input.down {
+        let mut input = Input {
+            left: false,
+            right: false,
+            up: false,
+            down: false,
+        };
+        event_pump
+            .keyboard_state()
+            .pressed_scancodes()
+            .filter_map(Keycode::from_scancode)
+            .for_each(|key| match key {
+                Keycode::Up => input.up = true,
+                Keycode::Down => input.down = true,
+                Keycode::Left => input.left = true,
+                Keycode::Right => input.right = true,
+                _ => {}
+            });
+
+        if tick_time.elapsed().as_secs() >= 1 {
+            tick_time = Instant::now();
             piece.row += 1;
+        } else if input.down {
+            piece.row += 1;
+        }
+
+        if input.up && last_rotation.elapsed().as_millis() >= 100 {
+            last_rotation = Instant::now();
+            piece.rotate();
+
+            let max = (COLUMN_COUNT - piece.width() as usize) as i32;
+            piece.column = piece.column.min(max).max(0);
         }
 
         /*
@@ -281,14 +260,14 @@ fn main() {
 
                 let x = piece.column + col_index as i32;
 
-                // play field left/right
+                // playfield left/right
                 if x <= 0 {
                     input.left = false;
                 } else if x >= COLUMN_COUNT as i32 - 1 {
                     input.right = false;
                 } else {
-                    // aneighbouring blocks
-                    // bit of a bodge - only here because at position (x: 0, y: 0) this left_neighbour assignment would otherwise underflow
+                    // neighbouring blocks
+                    // bit of a bodge - only assigned here because without first testing x we might overflow
                     let left_neighbour = x as usize + y - 1;
                     let right_neighbour = x as usize + y + 1;
                     if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != Color::BLACK {
@@ -325,53 +304,59 @@ fn main() {
                  * touching something below it
                  */
                 let current_row_index = x as usize + y;
-                if current_row_index >= BLOCK_COUNT || blocks[current_row_index] != Color::BLACK {
-                    // copy all the piece blocks into the background blocks array
-                    for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
-                        // the -1 here is very important. As soon as anything goes off screen or collides with something below it
-                        // we need to snap it back up a row into place
-                        let y = (piece.row + row_index - 1) * COLUMN_COUNT;
-                        for (piece_index, block) in piece_row.iter().enumerate() {
-                            let x = piece.column + piece_index as i32;
-                            if *block == 0 || x < 0 {
-                                continue;
-                            }
-                            blocks[x as usize + y] = piece.shapes.colour();
-                        }
-                    }
-
-                    let mut lines = vec![];
-
-                    // get a count of how many lines we've cleared plus their indices
-                    for row in 0..ROW_COUNT {
-                        for col in 0..COLUMN_COUNT {
-                            if blocks[(row * COLUMN_COUNT) + col] == Color::BLACK {
-                                break;
-                            }
-                            if col == COLUMN_COUNT - 1 {
-                                lines.push(row);
-                            }
-                        }
-                    }
-
-                    // shift all rows above each line down by one
-                    for line in &lines {
-                        for row in (1..=*line).rev() {
-                            for col in 0..COLUMN_COUNT {
-                                blocks[(row * COLUMN_COUNT) + col] =
-                                    blocks[((row - 1) * COLUMN_COUNT) + col];
-                            }
-                        }
-                    }
-
-                    let num_lines = lines.len() as u32;
-                    score.lines += num_lines;
-                    score.points += (num_lines * num_lines) * 100;
-
-                    // as soon as we hit anything, spawn a new piece and don't look for any further collisions
-                    piece = Piece::random();
-                    break 'collision_vertical;
+                if current_row_index < BLOCK_COUNT && blocks[current_row_index] == Color::BLACK {
+                    continue;
                 }
+
+                // we've hit either the bottom of the playfield or a block underneath us
+
+                // copy all the piece blocks into the background blocks array
+                for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+                    // the -1 here is very important. As soon as anything goes off screen or collides with something below it
+                    // we need to snap it back up a row into place
+                    let y = (piece.row + row_index - 1) * COLUMN_COUNT;
+                    for (piece_index, block) in piece_row.iter().enumerate() {
+                        let x = piece.column + piece_index as i32;
+                        if *block == 0 || x < 0 {
+                            continue;
+                        }
+                        blocks[x as usize + y] = piece.shapes.colour();
+                    }
+                }
+
+                let mut lines = vec![];
+
+                // get a count of how many lines we've cleared plus their indices
+                for (row, blocks) in blocks.chunks(COLUMN_COUNT).enumerate() {
+                    let filled_blocks = blocks
+                        .iter()
+                        .filter(|&colour| *colour != Color::BLACK)
+                        .count();
+                    if filled_blocks == COLUMN_COUNT {
+                        lines.push(row);
+                    }
+                }
+
+                // shift all rows above each line down by one
+                for line in &lines {
+                    for row in (1..=*line).rev() {
+                        for col in 0..COLUMN_COUNT {
+                            blocks[(row * COLUMN_COUNT) + col] =
+                                blocks[((row - 1) * COLUMN_COUNT) + col];
+                        }
+                    }
+                }
+
+                let num_lines = lines.len() as u32;
+                score.lines += num_lines;
+                score.points += (num_lines * num_lines) * 100;
+
+                println!("Score: {:?}", score);
+
+                // as soon as we hit anything, spawn a new piece and don't look for any further collisions
+                piece = next_piece;
+                next_piece = Piece::random();
+                break 'collision_vertical;
             }
         }
 
@@ -384,58 +369,28 @@ fn main() {
         // existing blocks first
         for (i, block) in blocks.iter().enumerate() {
             let colour = *block;
-            let x = PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE);
-            let y = PLAYFIELD_START_Y + ((i / 10) * BLOCK_SIZE);
-            let rect_w = BLOCK_SIZE as u32;
-
-            canvas.set_draw_color(Color::GREY);
-            canvas
-                .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
-                .unwrap();
-            let (start_offset, end_offset) = if colour != Color::BLACK {
+            let x = (PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE)) as i32;
+            let y = (PLAYFIELD_START_Y + ((i / 10) * BLOCK_SIZE)) as i32;
+            let size = BLOCK_SIZE as u32;
+            let inner = if colour != Color::BLACK {
                 (1, 2)
             } else {
                 (0, 0)
             };
+            let inner_rect = Rect::new(x + inner.0, y + inner.0, size - inner.1, size - inner.1);
+
+            canvas.set_draw_color(Color::GREY);
+            canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
+
             canvas.set_draw_color(colour);
-            canvas
-                .fill_rect(Rect::new(
-                    x as i32 + start_offset,
-                    y as i32 + start_offset,
-                    rect_w - end_offset,
-                    rect_w - end_offset,
-                ))
-                .unwrap();
+            canvas.fill_rect(inner_rect).unwrap();
         }
 
-        // current piece
-        for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
-            let y = PLAYFIELD_START_Y + ((piece.row + row_index) * BLOCK_SIZE);
-
-            for (piece_index, piece_val) in piece_row.iter().enumerate() {
-                let colour = *piece_val;
-                if colour == 0 {
-                    continue;
-                }
-                let x = PLAYFIELD_START_X as i32
-                    + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
-                let rect_w = BLOCK_SIZE as u32;
-                canvas.set_draw_color(Color::GREY);
-                canvas
-                    .fill_rect(Rect::new(x as i32, y as i32, rect_w, rect_w))
-                    .unwrap();
-
-                canvas.set_draw_color(piece.shapes.colour());
-                canvas
-                    .fill_rect(Rect::new(
-                        x as i32 + 1,
-                        y as i32 + 1,
-                        rect_w - 2,
-                        rect_w - 2,
-                    ))
-                    .unwrap();
-            }
-        }
+        render_piece(&mut canvas, &piece, PLAYFIELD_START_X, PLAYFIELD_START_Y);
+        render_piece(&mut canvas, &next_piece, 500, 80);
         canvas.present();
+
+        let sleep_ms = (1000 / 30) - frame_start.elapsed().as_millis().min(0);
+        thread::sleep(Duration::from_millis(sleep_ms as u64));
     }
 }

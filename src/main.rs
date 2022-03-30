@@ -85,6 +85,12 @@ macro_rules! shape_vec {
     };
 }
 
+macro_rules! enumerate {
+    ($piece:expr) => {
+        $piece.current_shape().iter().enumerate()
+    };
+}
+
 struct ShapeSet(Color, Vec<Vec<Vec<u8>>>, [u8; 2]);
 
 impl ShapeSet {
@@ -142,15 +148,13 @@ impl Piece {
 }
 
 fn render_piece(canvas: &mut Canvas<Window>, piece: &Piece, sx: usize, sy: usize) {
-    for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+    for (row_index, piece_row) in enumerate!(piece) {
         let y = (sy + ((piece.row + row_index) * BLOCK_SIZE)) as i32;
-
-        for (piece_index, piece_val) in piece_row.iter().enumerate() {
-            let colour = *piece_val;
-            if colour == 0 {
+        for (col_index, block) in piece_row.iter().enumerate() {
+            if *block == 0 {
                 continue;
             }
-            let x = sx as i32 + ((piece.column + piece_index as i32) * BLOCK_SIZE as i32);
+            let x = sx as i32 + ((piece.column + col_index as i32) * BLOCK_SIZE as i32);
             let size = BLOCK_SIZE as u32;
             canvas.set_draw_color(Color::GREY);
             canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
@@ -251,7 +255,7 @@ fn main() {
          *
          * This can unset any left/right movement intended by the player
          */
-        for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+        for (row_index, piece_row) in enumerate!(piece) {
             let y = (piece.row + row_index) * COLUMN_COUNT;
             for (col_index, block) in piece_row.iter().enumerate() {
                 if *block == 0 {
@@ -289,8 +293,7 @@ fn main() {
         /*
          * Vertical collision detection
          */
-        'collision_vertical: for (row_index, piece_row) in piece.current_shape().iter().enumerate()
-        {
+        'collision: for (row_index, piece_row) in enumerate!(piece) {
             let y = (piece.row + row_index) * COLUMN_COUNT;
             for (col_index, block) in piece_row.iter().enumerate() {
                 if *block == 0 {
@@ -311,15 +314,15 @@ fn main() {
                 // we've hit either the bottom of the playfield or a block underneath us
 
                 // copy all the piece blocks into the background blocks array
-                for (row_index, piece_row) in piece.current_shape().iter().enumerate() {
+                for (row_index, piece_row) in enumerate!(piece) {
                     // the -1 here is very important. As soon as anything goes off screen or collides with something below it
                     // we need to snap it back up a row into place
                     let y = (piece.row + row_index - 1) * COLUMN_COUNT;
-                    for (piece_index, block) in piece_row.iter().enumerate() {
-                        let x = piece.column + piece_index as i32;
-                        if *block == 0 || x < 0 {
+                    for (col_index, block) in piece_row.iter().enumerate() {
+                        if *block == 0 {
                             continue;
                         }
+                        let x = piece.column + col_index as i32;
                         blocks[x as usize + y] = piece.shapes.colour();
                     }
                 }
@@ -356,7 +359,7 @@ fn main() {
                 // as soon as we hit anything, spawn a new piece and don't look for any further collisions
                 piece = next_piece;
                 next_piece = Piece::random();
-                break 'collision_vertical;
+                break 'collision;
             }
         }
 

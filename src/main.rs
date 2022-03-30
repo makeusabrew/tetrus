@@ -327,20 +327,20 @@ fn main() {
                     }
                 }
 
-                let mut lines = vec![];
-
                 // get a count of how many lines we've cleared plus their indices
-                for (row, blocks) in blocks.chunks(COLUMN_COUNT).enumerate() {
+                let lines: Vec<usize> = blocks.chunks(COLUMN_COUNT).enumerate().filter_map(|(row, blocks)| {
                     let filled_blocks = blocks
                         .iter()
                         .filter(|&colour| *colour != Color::BLACK)
                         .count();
                     if filled_blocks == COLUMN_COUNT {
-                        lines.push(row);
+                        Some(row)
+                    } else {
+                        None
                     }
-                }
+                }).collect();
 
-                // shift all rows above each line down by one
+                // shift all rows above each line down by one. This can probably be massively improved!
                 for line in &lines {
                     for row in (1..=*line).rev() {
                         for col in 0..COLUMN_COUNT {

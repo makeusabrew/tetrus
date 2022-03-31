@@ -1,8 +1,7 @@
 extern crate sdl2;
 
 use std::thread;
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
@@ -19,7 +18,12 @@ const PLAYFIELD_START_Y: usize = 0;
 const BLOCKS_PER_ROW: usize = 10;
 const ROW_COUNT: usize = 20;
 const BLOCK_COUNT: usize = BLOCKS_PER_ROW * ROW_COUNT;
+const COLOR_ORANGE: Color = Color::RGBA(255, 165, 0, 255);
+const EMPTY: Color = Color::BLACK;
 
+// rustfmt does funny things with the Tetromino formatting below :/
+// each line represents all N rows of a given piece at a given angle
+// based on: https://vignette.wikia.nocookie.net/tetrisconcept/images/3/3d/SRS-pieces.png
 const T_PIECES: [[[u8; 3]; 3]; 4] = [
     [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
     [[0, 1, 0], [0, 1, 1], [0, 1, 0]],
@@ -57,14 +61,12 @@ const I_PIECES: [[[u8; 4]; 4]; 4] = [
     [[0, 0, 0, 0], [0, 0, 0, 0], [1, 1, 1, 1], [0, 0, 0, 0]],
     [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]],
 ];
-const COLOR_ORANGE: Color = Color::RGBA(255, 165, 0, 255);
-const EMPTY: Color = Color::BLACK;
 
 struct Piece {
-    pub shapes: ShapeSet,
-    pub angle: usize,
-    pub column: i32,
-    pub row: usize,
+    shapes: ShapeSet,
+    angle: usize,
+    column: i32,
+    row: usize,
 }
 
 struct Input {
@@ -80,7 +82,7 @@ struct Score {
     pub lines: u32,
 }
 
-macro_rules! shape_vec {
+macro_rules! shape_list {
     ($a:expr) => {
         $a.map(|p| p.map(|p| p.to_vec()).to_vec()).to_vec()
     };
@@ -92,31 +94,34 @@ macro_rules! enumerate {
     };
 }
 
-struct ShapeSet(Color, Vec<Vec<Vec<u8>>>, [u8; 2]);
+type Shape = Vec<Vec<u8>>;
+type ShapeList = Vec<Shape>;
+type ShapeWidths = [u8; 2];
+struct ShapeSet(ShapeList, ShapeWidths, Color);
 
 impl ShapeSet {
     pub fn from_index(piece_type: usize) -> ShapeSet {
         match piece_type {
-            0 => ShapeSet(Color::MAGENTA, shape_vec!(T_PIECES), [3, 2]),
-            1 => ShapeSet(Color::YELLOW, shape_vec!(O_PIECES), [2, 2]),
-            2 => ShapeSet(Color::GREEN, shape_vec!(S_PIECES), [3, 2]),
-            3 => ShapeSet(Color::RED, shape_vec!(Z_PIECES), [3, 2]),
-            4 => ShapeSet(COLOR_ORANGE, shape_vec!(L_PIECES), [3, 2]),
-            5 => ShapeSet(Color::BLUE, shape_vec!(J_PIECES), [3, 2]),
-            _ => ShapeSet(Color::CYAN, shape_vec!(I_PIECES), [4, 1]),
+            0 => ShapeSet(shape_list!(T_PIECES), [3, 2], Color::MAGENTA),
+            1 => ShapeSet(shape_list!(O_PIECES), [2, 2], Color::YELLOW),
+            2 => ShapeSet(shape_list!(S_PIECES), [3, 2], Color::GREEN),
+            3 => ShapeSet(shape_list!(Z_PIECES), [3, 2], Color::RED),
+            4 => ShapeSet(shape_list!(L_PIECES), [3, 2], COLOR_ORANGE),
+            5 => ShapeSet(shape_list!(J_PIECES), [3, 2], Color::BLUE),
+            _ => ShapeSet(shape_list!(I_PIECES), [4, 1], Color::CYAN),
         }
     }
-    pub fn get(&self, angle: usize) -> Vec<Vec<u8>> {
-        self.1[angle].clone()
+    pub fn get(&self, angle: usize) -> Shape {
+        self.0[angle].clone()
     }
     pub fn len(&self) -> usize {
-        self.1.len()
+        self.0.len()
     }
     pub fn colour(&self) -> Color {
-        self.0
+        self.2
     }
     pub fn width(&self, angle: usize) -> u8 {
-        self.2[angle % 2]
+        self.1[angle % 2]
     }
 }
 
@@ -146,36 +151,42 @@ impl Piece {
             self.angle = 0;
         }
     }
-}
 
-fn render_piece(canvas: &mut Canvas<Window>, piece: &Piece, sx: usize, sy: usize) {
-    for (row_index, piece_row) in enumerate!(piece) {
-        let y = (sy + ((piece.row + row_index) * BLOCK_SIZE)) as i32;
-        for (col_index, block) in piece_row.iter().enumerate() {
-            if *block == 0 {
-                continue;
+    pub fn draw(&self, canvas: &mut Canvas<Window>, sx: usize, sy: usize) {
+        for (row_index, piece_row) in enumerate!(self) {
+            let y = (sy + ((self.row + row_index) * BLOCK_SIZE)) as i32;
+            for (col_index, block) in piece_row.iter().enumerate() {
+                if *block == 0 {
+                    continue;
+                }
+                let x = sx as i32 + ((self.column + col_index as i32) * BLOCK_SIZE as i32);
+                let size = BLOCK_SIZE as u32;
+                canvas.set_draw_color(Color::GREY);
+                canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
+
+                canvas.set_draw_color(self.shapes.colour());
+                canvas
+                    .fill_rect(Rect::new(x + 1, y + 1, size - 2, size - 2))
+                    .unwrap();
             }
-            let x = sx as i32 + ((piece.column + col_index as i32) * BLOCK_SIZE as i32);
-            let size = BLOCK_SIZE as u32;
-            canvas.set_draw_color(Color::GREY);
-            canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
-
-            canvas.set_draw_color(piece.shapes.colour());
-            canvas
-                .fill_rect(Rect::new(x + 1, y + 1, size - 2, size - 2))
-                .unwrap();
         }
     }
 }
 
 fn main() {
-    // 10x20 area
     let mut blocks = [EMPTY; BLOCK_COUNT];
+    let mut piece = Piece::random();
+    let mut next_piece = Piece::random();
+    let mut last_rotation = Instant::now();
+    let mut tick_time = Instant::now();
+    let mut score = Score {
+        points: 0,
+        lines: 0,
+    };
 
+    // SDL2 display/event handling
     let sdl_context = sdl2::init().unwrap();
-
     let video_subsystem = sdl_context.video().unwrap();
-
     let window = video_subsystem
         .window("tetrus", SCREEN_WIDTH, SCREEN_HEIGHT)
         .position_centered()
@@ -185,23 +196,12 @@ fn main() {
     let mut canvas = window.into_canvas().build().unwrap();
     let mut event_pump = sdl_context.event_pump().unwrap();
 
-    let mut piece = Piece::random();
-    let mut next_piece = Piece::random();
-    let mut score = Score {
-        points: 0,
-        lines: 0,
-    };
-
     /*
      * @TODO:
-     *
      * - score display
      * - space bar support
      * - sound
      */
-
-    let mut last_rotation = Instant::now();
-    let mut tick_time = Instant::now();
     'running: loop {
         let frame_start = Instant::now();
         /*
@@ -303,12 +303,12 @@ fn main() {
                 let x = piece.column + col_index as i32;
 
                 /*
-                 * check for things below this shape. We cheat here and wait until we're *actually* in the block below
-                 * to allow the player to slide the block around for the duration of a single tick even while it's
+                 * check for things below this shape. We cheat here and wait until we're actually *in* the block below
+                 * This allows the player to slide the block around for the duration of a single tick while it's
                  * touching something below it
                  */
-                let current_row_index = x as usize + y;
-                if current_row_index < BLOCK_COUNT && blocks[current_row_index] == EMPTY {
+                let current_index = x as usize + y;
+                if current_index < BLOCK_COUNT && blocks[current_index] == EMPTY {
                     continue;
                 }
 
@@ -372,8 +372,8 @@ fn main() {
             canvas.fill_rect(inner_rect).unwrap();
         }
 
-        render_piece(&mut canvas, &piece, PLAYFIELD_START_X, PLAYFIELD_START_Y);
-        render_piece(&mut canvas, &next_piece, 500, 80);
+        piece.draw(&mut canvas, PLAYFIELD_START_X, PLAYFIELD_START_Y);
+        next_piece.draw(&mut canvas, 500, 80);
         canvas.present();
 
         let sleep_ms = (1000 / 30) - frame_start.elapsed().as_millis().min(0);

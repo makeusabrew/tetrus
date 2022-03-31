@@ -16,9 +16,9 @@ const SCREEN_HEIGHT: u32 = 600;
 const BLOCK_SIZE: usize = 30;
 const PLAYFIELD_START_X: usize = 250;
 const PLAYFIELD_START_Y: usize = 0;
-const COLUMN_COUNT: usize = 10;
+const BLOCKS_PER_ROW: usize = 10;
 const ROW_COUNT: usize = 20;
-const BLOCK_COUNT: usize = COLUMN_COUNT * ROW_COUNT;
+const BLOCK_COUNT: usize = BLOCKS_PER_ROW * ROW_COUNT;
 
 const T_PIECES: [[[u8; 3]; 3]; 4] = [
     [[0, 1, 0], [1, 1, 1], [0, 0, 0]],
@@ -58,6 +58,7 @@ const I_PIECES: [[[u8; 4]; 4]; 4] = [
     [[0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0], [0, 1, 0, 0]],
 ];
 const COLOR_ORANGE: Color = Color::RGBA(255, 165, 0, 255);
+const EMPTY: Color = Color::BLACK;
 
 struct Piece {
     pub shapes: ShapeSet,
@@ -169,7 +170,7 @@ fn render_piece(canvas: &mut Canvas<Window>, piece: &Piece, sx: usize, sy: usize
 
 fn main() {
     // 10x20 area
-    let mut blocks = [Color::BLACK; BLOCK_COUNT];
+    let mut blocks = [EMPTY; BLOCK_COUNT];
 
     let sdl_context = sdl2::init().unwrap();
 
@@ -246,17 +247,17 @@ fn main() {
             last_rotation = Instant::now();
             piece.rotate();
 
-            let max = (COLUMN_COUNT - piece.width() as usize) as i32;
+            // bring the piece x value back in bounds to prevent overflow
+            let max = (BLOCKS_PER_ROW - piece.width() as usize) as i32;
             piece.column = piece.column.min(max).max(0);
         }
 
         /*
          * Horizontal collision detection
-         *
          * This can unset any left/right movement intended by the player
          */
         for (row_index, piece_row) in enumerate!(piece) {
-            let y = (piece.row + row_index) * COLUMN_COUNT;
+            let y = (piece.row + row_index) * BLOCKS_PER_ROW;
             for (col_index, block) in piece_row.iter().enumerate() {
                 if *block == 0 {
                     continue;
@@ -267,17 +268,17 @@ fn main() {
                 // playfield left/right
                 if x <= 0 {
                     input.left = false;
-                } else if x >= COLUMN_COUNT as i32 - 1 {
+                } else if x >= BLOCKS_PER_ROW as i32 - 1 {
                     input.right = false;
                 } else {
                     // neighbouring blocks
                     // bit of a bodge - only assigned here because without first testing x we might overflow
                     let left_neighbour = x as usize + y - 1;
                     let right_neighbour = x as usize + y + 1;
-                    if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != Color::BLACK {
+                    if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != EMPTY {
                         input.left = false;
                     }
-                    if right_neighbour >= BLOCK_COUNT || blocks[right_neighbour] != Color::BLACK {
+                    if right_neighbour >= BLOCK_COUNT || blocks[right_neighbour] != EMPTY {
                         input.right = false;
                     }
                 }
@@ -294,7 +295,7 @@ fn main() {
          * Vertical collision detection
          */
         'collision: for (row_index, piece_row) in enumerate!(piece) {
-            let y = (piece.row + row_index) * COLUMN_COUNT;
+            let y = (piece.row + row_index) * BLOCKS_PER_ROW;
             for (col_index, block) in piece_row.iter().enumerate() {
                 if *block == 0 {
                     continue;
@@ -303,21 +304,20 @@ fn main() {
 
                 /*
                  * check for things below this shape. We cheat here and wait until we're *actually* in the block below
-                 * to allow the player to slide the block around for the duration of a single 'tick' even while it's
+                 * to allow the player to slide the block around for the duration of a single tick even while it's
                  * touching something below it
                  */
                 let current_row_index = x as usize + y;
-                if current_row_index < BLOCK_COUNT && blocks[current_row_index] == Color::BLACK {
+                if current_row_index < BLOCK_COUNT && blocks[current_row_index] == EMPTY {
                     continue;
                 }
 
                 // we've hit either the bottom of the playfield or a block underneath us
-
                 // copy all the piece blocks into the background blocks array
                 for (row_index, piece_row) in enumerate!(piece) {
                     // the -1 here is very important. As soon as anything goes off screen or collides with something below it
                     // we need to snap it back up a row into place
-                    let y = (piece.row + row_index - 1) * COLUMN_COUNT;
+                    let y = (piece.row + row_index - 1) * BLOCKS_PER_ROW;
                     for (col_index, block) in piece_row.iter().enumerate() {
                         if *block == 0 {
                             continue;
@@ -327,32 +327,19 @@ fn main() {
                     }
                 }
 
-                // get a count of how many lines we've cleared plus their indices
-                let lines: Vec<usize> = blocks.chunks(COLUMN_COUNT).enumerate().filter_map(|(row, blocks)| {
-                    let filled_blocks = blocks
-                        .iter()
-                        .filter(|&colour| *colour != Color::BLACK)
-                        .count();
-                    if filled_blocks == COLUMN_COUNT {
-                        Some(row)
-                    } else {
-                        None
-                    }
-                }).collect();
-
-                // shift all rows above each line down by one. This can probably be massively improved!
-                for line in &lines {
-                    for row in (1..=*line).rev() {
-                        for col in 0..COLUMN_COUNT {
-                            blocks[(row * COLUMN_COUNT) + col] =
-                                blocks[((row - 1) * COLUMN_COUNT) + col];
-                        }
+                let mut cleared_lines = 0;
+                for start in (0..BLOCK_COUNT).step_by(BLOCKS_PER_ROW) {
+                    let end = start + BLOCKS_PER_ROW;
+                    let filled = &blocks[start..end].iter().filter(|&c| *c != EMPTY).count();
+                    if *filled == BLOCKS_PER_ROW {
+                        // this will memmove everything up until the start of the cleared line 'down' by one line
+                        // which has the effect of replacing (or clearing) the line with whatever was above it
+                        blocks.copy_within(0..start, BLOCKS_PER_ROW);
+                        cleared_lines += 1;
                     }
                 }
-
-                let num_lines = lines.len() as u32;
-                score.lines += num_lines;
-                score.points += (num_lines * num_lines) * 100;
+                score.lines += cleared_lines;
+                score.points += (cleared_lines * cleared_lines) * 100;
 
                 println!("Score: {:?}", score);
 
@@ -375,11 +362,7 @@ fn main() {
             let x = (PLAYFIELD_START_X + ((i % 10) * BLOCK_SIZE)) as i32;
             let y = (PLAYFIELD_START_Y + ((i / 10) * BLOCK_SIZE)) as i32;
             let size = BLOCK_SIZE as u32;
-            let inner = if colour != Color::BLACK {
-                (1, 2)
-            } else {
-                (0, 0)
-            };
+            let inner = if colour != EMPTY { (1, 2) } else { (0, 0) };
             let inner_rect = Rect::new(x + inner.0, y + inner.0, size - inner.1, size - inner.1);
 
             canvas.set_draw_color(Color::GREY);

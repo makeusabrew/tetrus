@@ -88,12 +88,6 @@ macro_rules! shape_list {
     };
 }
 
-macro_rules! enumerate {
-    ($piece:expr) => {
-        $piece.current_shape().iter().enumerate()
-    };
-}
-
 type Shape = Vec<Vec<u8>>;
 type ShapeList = Vec<Shape>;
 type ShapeWidths = [u8; 2];
@@ -137,7 +131,7 @@ impl Piece {
         }
     }
 
-    pub fn current_shape(&self) -> Vec<Vec<u8>> {
+    pub fn current_shape(&self) -> Shape {
         self.shapes.get(self.angle)
     }
 
@@ -153,21 +147,45 @@ impl Piece {
     }
 
     pub fn draw(&self, canvas: &mut Canvas<Window>, sx: usize, sy: usize) {
-        for (row_index, piece_row) in enumerate!(self) {
+        for (col_index, row_index) in self.block_iter() {
+            let x = sx as i32 + ((self.column + col_index as i32) * BLOCK_SIZE as i32);
             let y = (sy + ((self.row + row_index) * BLOCK_SIZE)) as i32;
-            for (col_index, block) in piece_row.iter().enumerate() {
-                if *block == 0 {
-                    continue;
-                }
-                let x = sx as i32 + ((self.column + col_index as i32) * BLOCK_SIZE as i32);
-                let size = BLOCK_SIZE as u32;
-                canvas.set_draw_color(Color::GREY);
-                canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
+            let size = BLOCK_SIZE as u32;
+            canvas.set_draw_color(Color::GREY);
+            canvas.fill_rect(Rect::new(x, y, size, size)).unwrap();
 
-                canvas.set_draw_color(self.shapes.colour());
-                canvas
-                    .fill_rect(Rect::new(x + 1, y + 1, size - 2, size - 2))
-                    .unwrap();
+            canvas.set_draw_color(self.shapes.colour());
+            canvas
+                .fill_rect(Rect::new(x + 1, y + 1, size - 2, size - 2))
+                .unwrap();
+        }
+    }
+
+    pub fn block_iter(&self) -> BlockIterator {
+        BlockIterator(0, 0, self.current_shape())
+    }
+}
+
+struct BlockIterator(usize, usize, Shape);
+
+impl Iterator for BlockIterator {
+    type Item = (usize, usize);
+    fn next(&mut self) -> Option<Self::Item> {
+        let x = self.0;
+        let y = self.1;
+        if y == self.2.len() {
+            None
+        } else {
+            let row = &self.2[y];
+            self.0 += 1;
+            if self.0 == row.len() {
+                self.0 = 0;
+                self.1 += 1;
+            }
+            if row[x] == 0 {
+                self.next() // don't return empty blocks
+            } else {
+                Some((x, y))
             }
         }
     }
@@ -256,31 +274,25 @@ fn main() {
          * Horizontal collision detection
          * This can unset any left/right movement intended by the player
          */
-        for (row_index, piece_row) in enumerate!(piece) {
+        for (col_index, row_index) in piece.block_iter() {
+            let x = piece.column + col_index as i32;
             let y = (piece.row + row_index) * BLOCKS_PER_ROW;
-            for (col_index, block) in piece_row.iter().enumerate() {
-                if *block == 0 {
-                    continue;
-                }
 
-                let x = piece.column + col_index as i32;
-
-                // playfield left/right
-                if x <= 0 {
+            // playfield left/right
+            if x <= 0 {
+                input.left = false;
+            } else if x >= BLOCKS_PER_ROW as i32 - 1 {
+                input.right = false;
+            } else {
+                // neighbouring blocks
+                // bit of a bodge - only assigned here because without first testing x we might overflow
+                let left_neighbour = x as usize + y - 1;
+                let right_neighbour = x as usize + y + 1;
+                if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != EMPTY {
                     input.left = false;
-                } else if x >= BLOCKS_PER_ROW as i32 - 1 {
+                }
+                if right_neighbour >= BLOCK_COUNT || blocks[right_neighbour] != EMPTY {
                     input.right = false;
-                } else {
-                    // neighbouring blocks
-                    // bit of a bodge - only assigned here because without first testing x we might overflow
-                    let left_neighbour = x as usize + y - 1;
-                    let right_neighbour = x as usize + y + 1;
-                    if left_neighbour >= BLOCK_COUNT || blocks[left_neighbour] != EMPTY {
-                        input.left = false;
-                    }
-                    if right_neighbour >= BLOCK_COUNT || blocks[right_neighbour] != EMPTY {
-                        input.right = false;
-                    }
                 }
             }
         }
@@ -294,60 +306,49 @@ fn main() {
         /*
          * Vertical collision detection
          */
-        'collision: for (row_index, piece_row) in enumerate!(piece) {
+        for (col_index, row_index) in piece.block_iter() {
+            let x = piece.column + col_index as i32;
             let y = (piece.row + row_index) * BLOCKS_PER_ROW;
-            for (col_index, block) in piece_row.iter().enumerate() {
-                if *block == 0 {
-                    continue;
-                }
-                let x = piece.column + col_index as i32;
 
-                /*
-                 * check for things below this shape. We cheat here and wait until we're actually *in* the block below
-                 * This allows the player to slide the block around for the duration of a single tick while it's
-                 * touching something below it
-                 */
-                let current_index = x as usize + y;
-                if current_index < BLOCK_COUNT && blocks[current_index] == EMPTY {
-                    continue;
-                }
-
-                // we've hit either the bottom of the playfield or a block underneath us
-                // copy all the piece blocks into the background blocks array
-                for (row_index, piece_row) in enumerate!(piece) {
-                    // the -1 here is very important. As soon as anything goes off screen or collides with something below it
-                    // we need to snap it back up a row into place
-                    let y = (piece.row + row_index - 1) * BLOCKS_PER_ROW;
-                    for (col_index, block) in piece_row.iter().enumerate() {
-                        if *block == 0 {
-                            continue;
-                        }
-                        let x = piece.column + col_index as i32;
-                        blocks[x as usize + y] = piece.shapes.colour();
-                    }
-                }
-
-                let mut cleared_lines = 0;
-                for start in (0..BLOCK_COUNT).step_by(BLOCKS_PER_ROW) {
-                    let end = start + BLOCKS_PER_ROW;
-                    let filled = &blocks[start..end].iter().filter(|&c| *c != EMPTY).count();
-                    if *filled == BLOCKS_PER_ROW {
-                        // this will memmove everything up until the start of the cleared line 'down' by one line
-                        // which has the effect of replacing (or clearing) the line with whatever was above it
-                        blocks.copy_within(0..start, BLOCKS_PER_ROW);
-                        cleared_lines += 1;
-                    }
-                }
-                score.lines += cleared_lines;
-                score.points += (cleared_lines * cleared_lines) * 100;
-
-                println!("Score: {:?}", score);
-
-                // as soon as we hit anything, spawn a new piece and don't look for any further collisions
-                piece = next_piece;
-                next_piece = Piece::random();
-                break 'collision;
+            /*
+             * check for things below this shape. We cheat here and wait until we're actually *in* the block below
+             * This allows the player to slide the block around for the duration of a single tick while it's
+             * touching something below it
+             */
+            let current_index = x as usize + y;
+            if current_index < BLOCK_COUNT && blocks[current_index] == EMPTY {
+                continue;
             }
+
+            // we've hit either the bottom of the playfield or a block underneath us
+            // copy all the piece blocks into the background blocks array
+            for (col_index, row_index) in piece.block_iter() {
+                // the -1 here is very important. As soon as anything goes off screen or collides with something below it
+                // we need to snap it back up a row into place
+                let x = piece.column + col_index as i32;
+                let y = (piece.row + row_index - 1) * BLOCKS_PER_ROW;
+                blocks[x as usize + y] = piece.shapes.colour();
+            }
+
+            let mut cleared_lines = 0;
+            for start in (0..BLOCK_COUNT).step_by(BLOCKS_PER_ROW) {
+                let end = start + BLOCKS_PER_ROW;
+                let filled = &blocks[start..end].iter().filter(|&c| *c != EMPTY).count();
+                if *filled == BLOCKS_PER_ROW {
+                    // this will memmove everything up until the start of the cleared line 'down' by one line
+                    // which has the effect of replacing (or clearing) the line with whatever was above it
+                    blocks.copy_within(0..start, BLOCKS_PER_ROW);
+                    cleared_lines += 1;
+                }
+            }
+            score.lines += cleared_lines;
+            score.points += (cleared_lines * cleared_lines) * 100;
+
+            println!("Score: {:?}", score);
+
+            // as soon as we hit anything, spawn a new piece and don't look for any further collisions
+            piece = next_piece;
+            next_piece = Piece::random();
         }
 
         /*

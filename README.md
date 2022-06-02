@@ -2,4 +2,5 @@
 
 A few hundred lines of Tetris
 
-<img width="811" alt="image" src="https://user-images.githubusercontent.com/278461/171688972-d74a47c8-3dd9-4d24-83b7-337fcb53383e.png">
+<img width="814" alt="image" src="https://user-images.githubusercontent.com/278461/171689413-5dd35657-ee33-447b-9ca1-a9ad65e9b8e2.png">
+
